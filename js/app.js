@@ -552,16 +552,20 @@ async function chooseFolder() {
   if (!clientId()) return driveStatus('Client ID do Google não configurado — defina em js/config.js.');
   if (!apiKey()) return driveStatus('Chave de API não configurada — defina DRIVE_API_KEY em js/config.js.');
   driveStatus('Abrindo o Drive…');
+  const dialog = $('#drive-dialog');
+  const wasOpen = dialog.open;
+  if (wasOpen) dialog.close();
   try {
     const folder = await pickFolder(clientId(), apiKey());
-    driveStatus('');
     if (!folder) return;
     driveState.folderId = folder.id;
     driveState.folderName = folder.name;
     saveDriveState();
-    syncFolderLabel();
   } catch (error) {
     driveStatus(`Erro: ${error.message}`);
+  } finally {
+    if (wasOpen) dialog.showModal();
+    syncFolderLabel();
   }
 }
 
