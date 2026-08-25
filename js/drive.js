@@ -102,14 +102,14 @@ export async function scanFolder(rootId) {
   return walkByAccessibleSet(rootId);
 }
 
-async function resolveEntry(item) {
+async function resolveEntry(item, tally) {
   if (item.mimeType !== SHORTCUT_MIME || !item.shortcutDetails?.targetId) return item;
   try {
-    const target = await driveFetch(
+    return await driveFetch(
       `/drive/v3/files/${item.shortcutDetails.targetId}?fields=id,name,mimeType,modifiedTime&supportsAllDrives=true`,
     ).then(r => r.json());
-    return target;
   } catch {
+    tally.unresolved++;
     return null;
   }
 }
@@ -140,10 +140,7 @@ function classifyInto(item, markdown, others) {
 }
 
 async function walkByParents(rootId) {
-  const markdown = [];
-  const others = [];
-  let failed = 0;
-  let raw = 0;
+  const tally = { markdown: [], others: [], failed: 0, raw: 0, unresolved: 0, sample: null };
   const seen = new Set([rootId]);
   const queue = [rootId];
   while (queue.length) {
@@ -159,20 +156,21 @@ async function walkByParents(rootId) {
       do {
         const data = await driveFetch(`/drive/v3/files?${params}`).then(r => r.json());
         for (const item of data.files ?? []) {
-          raw++;
-          const entry = await resolveEntry(item);
+          tally.raw++;
+          if (!tally.sample) tally.sample = { name: item.name, mimeType: item.mimeType };
+          const entry = await resolveEntry(item, tally);
           if (!entry) continue;
           if (entry.mimeType === FOLDER_MIME) {
             if (!seen.has(entry.id)) { seen.add(entry.id); queue.push(entry.id); }
-          } else classifyInto(entry, markdown, others);
+          } else classifyInto(entry, tally.markdown, tally.others);
         }
         params.set('pageToken', data.nextPageToken ?? '');
       } while (params.get('pageToken'));
     } catch {
-      failed++;
+      tally.failed++;
     }
   }
-  return { markdown, others, failed, raw };
+  return tally;
 }
 
 async function walkByAccessibleSet(rootId) {
@@ -185,22 +183,21 @@ async function walkByAccessibleSet(rootId) {
     }
   }
 
-  const markdown = [];
-  const others = [];
-  let raw = 0;
+  const tally = { markdown: [], others: [], failed: 0, raw: 0, unresolved: 0, sample: null };
   const seen = new Set([rootId]);
   const queue = [rootId];
   while (queue.length) {
     for (const item of childrenOf.get(queue.shift()) ?? []) {
-      raw++;
-      const entry = await resolveEntry(item);
+      tally.raw++;
+      if (!tally.sample) tally.sample = { name: item.name, mimeType: item.mimeType };
+      const entry = await resolveEntry(item, tally);
       if (!entry) continue;
       if (entry.mimeType === FOLDER_MIME) {
         if (!seen.has(entry.id)) { seen.add(entry.id); queue.push(entry.id); }
-      } else classifyInto(entry, markdown, others);
+      } else classifyInto(entry, tally.markdown, tally.others);
     }
   }
-  return { markdown, others, failed: 0, raw };
+  return tally;
 }
 
 export async function listChildren(folderId) {

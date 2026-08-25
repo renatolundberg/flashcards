@@ -634,18 +634,22 @@ async function runDrive(action) {
 
 async function pullFromDrive(folderId) {
   const tracked = driveState.files;
-  const { markdown: remotes, others, failed, raw } = await scanFolder(folderId);
+  const result = await scanFolder(folderId);
+  const { markdown: remotes, others } = result;
   driveState.folderId = folderId;
 
   if (!remotes.length) {
     refresh();
     if (others.length) {
-      const inaccessible = failed ? ` (${failed} pasta(s) inacessível(is))` : '';
+      const inaccessible = result.failed ? ` (${result.failed} pasta(s) inacessível(is))` : '';
       return driveStatus(`Nenhum .md na pasta${inaccessible} — há ${others.length} arquivo(s) de outro tipo (PDF etc.). O app importa somente arquivos .md.`);
     }
-    return driveStatus(raw === 0 && !failed
-      ? 'O Drive não devolveu arquivos acessíveis — repita "Escolher pasta" para renovar a autorização.'
-      : 'Nenhum .md encontrado — a pasta contém apenas subpastas sem arquivos.');
+    const clues = [];
+    if (result.unresolved) clues.push(`${result.unresolved} atalho(s) cujo destino não é acessível ao app`);
+    if (result.sample) clues.push(`item visto: "${result.sample.name}" [${result.sample.mimeType}]`);
+    return driveStatus(`Nenhum .md encontrado — a pasta contém apenas subpastas sem arquivos.` +
+      (clues.length ? ` Detalhes: ${clues.join('; ')}.` : '') +
+      ' Se seus .md estão como atalhos, mova ou copie os arquivos reais para dentro da pasta.');
   }
 
   const fresh = [];
