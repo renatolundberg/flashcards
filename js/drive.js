@@ -121,6 +121,7 @@ async function listAccessibleItems() {
     fields: 'nextPageToken, files(id, name, mimeType, modifiedTime, trashed, parents, shortcutDetails)',
     supportsAllDrives: 'true',
     includeItemsFromAllDrives: 'true',
+    corpora: 'allDrives',
   });
   do {
     const data = await driveFetch(`/drive/v3/files?${params}`).then(r => r.json());
@@ -140,7 +141,7 @@ function classifyInto(item, markdown, others) {
 }
 
 async function walkByParents(rootId) {
-  const tally = { markdown: [], others: [], failed: 0, raw: 0, unresolved: 0, sample: null };
+  const tally = { markdown: [], others: [], failed: 0, raw: 0, unresolved: 0, folders: 0, sample: null };
   const seen = new Set([rootId]);
   const queue = [rootId];
   while (queue.length) {
@@ -152,6 +153,7 @@ async function walkByParents(rootId) {
         pageSize: '200',
         supportsAllDrives: 'true',
         includeItemsFromAllDrives: 'true',
+        corpora: 'allDrives',
       });
       do {
         const data = await driveFetch(`/drive/v3/files?${params}`).then(r => r.json());
@@ -161,7 +163,7 @@ async function walkByParents(rootId) {
           const entry = await resolveEntry(item, tally);
           if (!entry) continue;
           if (entry.mimeType === FOLDER_MIME) {
-            if (!seen.has(entry.id)) { seen.add(entry.id); queue.push(entry.id); }
+            if (!seen.has(entry.id)) { seen.add(entry.id); tally.folders++; queue.push(entry.id); }
           } else classifyInto(entry, tally.markdown, tally.others);
         }
         params.set('pageToken', data.nextPageToken ?? '');
@@ -183,7 +185,7 @@ async function walkByAccessibleSet(rootId) {
     }
   }
 
-  const tally = { markdown: [], others: [], failed: 0, raw: 0, unresolved: 0, sample: null };
+  const tally = { markdown: [], others: [], failed: 0, raw: 0, unresolved: 0, folders: 0, sample: null };
   const seen = new Set([rootId]);
   const queue = [rootId];
   while (queue.length) {
@@ -193,7 +195,7 @@ async function walkByAccessibleSet(rootId) {
       const entry = await resolveEntry(item, tally);
       if (!entry) continue;
       if (entry.mimeType === FOLDER_MIME) {
-        if (!seen.has(entry.id)) { seen.add(entry.id); queue.push(entry.id); }
+        if (!seen.has(entry.id)) { seen.add(entry.id); tally.folders++; queue.push(entry.id); }
       } else classifyInto(entry, tally.markdown, tally.others);
     }
   }
@@ -207,6 +209,7 @@ export async function listChildren(folderId) {
     pageSize: '1000',
     supportsAllDrives: 'true',
     includeItemsFromAllDrives: 'true',
+    corpora: 'allDrives',
   });
   let items = [];
   try {
