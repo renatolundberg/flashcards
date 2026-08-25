@@ -96,9 +96,41 @@ const FOLDER_MIME = 'application/vnd.google-apps.folder';
 const GOOGLE_MIME = 'application/vnd.google-apps.';
 
 export async function scanFolder(rootId) {
+  const result = await walkByParents(rootId);
+  if (result.raw > 0 || result.failed > 0) return result;
+  return walkByAccessibleSet(rootId);
+}
+
+async function listAccessibleItems() {
+  const items = [];
+  const params = new URLSearchParams({
+    pageSize: '1000',
+    fields: 'nextPageToken, files(id, name, mimeType, modifiedTime, trashed, parents)',
+    supportsAllDrives: 'true',
+    includeItemsFromAllDrives: 'true',
+  });
+  do {
+    const data = await driveFetch(`/drive/v3/files?${params}`).then(r => r.json());
+    items.push(...(data.files ?? []));
+    params.set('pageToken', data.nextPageToken ?? '');
+  } while (params.get('pageToken'));
+  return items;
+}
+
+const isMarkdown = item => item.name.toLowerCase().endsWith('.md') &&
+  !item.mimeType?.startsWith(GOOGLE_MIME);
+
+function classifyInto(item, markdown, others) {
+  if (item.mimeType === FOLDER_MIME) return 'folder';
+  (isMarkdown(item) ? markdown : others).push(item);
+  return 'file';
+}
+
+async function walkByParents(rootId) {
   const markdown = [];
   const others = [];
   let failed = 0;
+  let raw = 0;
   const queue = [rootId];
   while (queue.length) {
     const folderId = queue.shift();
@@ -113,10 +145,8 @@ export async function scanFolder(rootId) {
       do {
         const data = await driveFetch(`/drive/v3/files?${params}`).then(r => r.json());
         for (const item of data.files ?? []) {
-          if (item.mimeType === FOLDER_MIME) queue.push(item.id);
-          else if (item.name.toLowerCase().endsWith('.md') &&
-                   !item.mimeType?.startsWith(GOOGLE_MIME)) markdown.push(item);
-          else others.push(item);
+          raw++;
+          if (classifyInto(item, markdown, others) === 'folder') queue.push(item.id);
         }
         params.set('pageToken', data.nextPageToken ?? '');
       } while (params.get('pageToken'));
@@ -124,7 +154,53 @@ export async function scanFolder(rootId) {
       failed++;
     }
   }
-  return { markdown, others, failed };
+  return { markdown, others, failed, raw };
+}
+
+async function walkByAccessibleSet(rootId) {
+  const childrenOf = new Map();
+  for (const item of await listAccessibleItems()) {
+    if (item.trashed) continue;
+    for (const parent of item.parents ?? []) {
+      if (!childrenOf.has(parent)) childrenOf.set(parent, []);
+      childrenOf.get(parent).push(item);
+    }
+  }
+
+  const markdown = [];
+  const others = [];
+  let raw = 0;
+  const queue = [rootId];
+  while (queue.length) {
+    for (const child of childrenOf.get(queue.shift()) ?? []) {
+      raw++;
+      if (classifyInto(child, markdown, others) === 'folder') queue.push(child.id);
+    }
+  }
+  return { markdown, others, failed: 0, raw };
+}
+
+export async function listChildren(folderId) {
+  const params = new URLSearchParams({
+    q: `'${folderId}' in parents and trashed = false`,
+    fields: 'nextPageToken, files(id, name, mimeType)',
+    pageSize: '1000',
+    supportsAllDrives: 'true',
+    includeItemsFromAllDrives: 'true',
+  });
+  const items = [];
+  try {
+    do {
+      const data = await driveFetch(`/drive/v3/files?${params}`).then(r => r.json());
+      items.push(...(data.files ?? []));
+      params.set('pageToken', data.nextPageToken ?? '');
+    } while (params.get('pageToken'));
+  } catch {
+    items.length = 0;
+  }
+  if (items.length) return items;
+  return (await listAccessibleItems())
+    .filter(item => !item.trashed && item.parents?.includes(folderId));
 }
 
 export async function fileModifiedTime(fileId) {

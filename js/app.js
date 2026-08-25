@@ -2,7 +2,7 @@ import { allCards, saveCard, removeCard, clearCards, loadPinned, savePinned } fr
 import { parseCard, serializeCard } from './card-format.js';
 import { importFiles, exportCard, exportZip } from './io.js';
 import {
-  connect, pickFolder, scanFolder, readFile, fileModifiedTime, writeFile, createFile, hashText,
+  connect, pickFolder, listChildren, scanFolder, readFile, fileModifiedTime, writeFile, createFile, hashText,
 } from './drive.js';
 import { DRIVE_CLIENT_ID, DRIVE_API_KEY } from './config.js';
 
@@ -523,11 +523,19 @@ function openDriveDialog() {
   }
   dialog.innerHTML = `
     <h2>Google Drive</h2>
-    <p class="muted hint">Escolha uma pasta do Drive à qual você tenha acesso.
-      Baixar importa os flashcards (.md) da pasta e subpastas; Enviar sobe seus cards.</p>
+    <p class="muted hint">Autorize a pasta-raiz uma vez em "Escolher pasta", navegue até onde quiser
+      e use "Usar esta pasta". Baixar importa os flashcards (.md) da pasta e subpastas; Enviar sobe seus cards.</p>
     <div class="dialog-actions">
       <button id="drive-choose">Escolher pasta…</button>
       <span id="drive-folder-label" class="hint"></span>
+    </div>
+    <div id="drive-browse">
+      <div class="dialog-actions">
+        <button id="drive-up" title="Subir">↑</button>
+        <span id="drive-path" class="hint"></span>
+        <button id="drive-here">Usar esta pasta</button>
+      </div>
+      <div id="drive-subfolders"></div>
     </div>
     <div class="dialog-actions">
       <button id="drive-pull">Baixar</button>
@@ -536,11 +544,51 @@ function openDriveDialog() {
     </div>
     <p id="drive-status" class="muted hint"></p>`;
   syncFolderLabel();
+  syncBrowse();
   dialog.querySelector('#drive-close').onclick = () => dialog.close();
   dialog.querySelector('#drive-choose').onclick = chooseFolder;
+  dialog.querySelector('#drive-up').onclick = () => { browseStack.pop(); syncBrowse(); };
+  dialog.querySelector('#drive-here').onclick = () => {
+    driveState.folderId = browseStack[browseStack.length - 1].id;
+    driveState.folderName = browseStack.map(level => level.name).join(' / ');
+    saveDriveState();
+    syncFolderLabel();
+    driveStatus('');
+  };
   dialog.querySelector('#drive-pull').onclick = () => runDrive(pullFromDrive);
   dialog.querySelector('#drive-push').onclick = () => runDrive(pushToDrive);
   dialog.showModal();
+}
+
+let browseStack = [];
+
+function syncBrowse() {
+  const path = $('#drive-path');
+  if (!path) return;
+  const pane = $('#drive-subfolders');
+  if (!browseStack.length) {
+    $('#drive-up').disabled = true;
+    path.textContent = '(autorize a pasta-raiz acima)';
+    pane.textContent = '';
+    return;
+  }
+  $('#drive-up').disabled = browseStack.length <= 1;
+  path.textContent = browseStack.map(level => level.name).join(' / ');
+  pane.textContent = 'Carregando…';
+  listChildren(browseStack[browseStack.length - 1].id).then(children => {
+    pane.textContent = '';
+    for (const child of children) {
+      if (child.mimeType !== 'application/vnd.google-apps.folder') continue;
+      const btn = document.createElement('button');
+      btn.textContent = '📁 ' + child.name;
+      btn.onclick = () => {
+        browseStack.push({ id: child.id, name: child.name });
+        syncBrowse();
+      };
+      pane.append(btn);
+    }
+    if (!pane.children.length) pane.append(hint('(nenhuma subpasta)'));
+  });
 }
 
 function syncFolderLabel() {
@@ -558,9 +606,11 @@ async function chooseFolder() {
   try {
     const folder = await pickFolder(clientId(), apiKey());
     if (!folder) return;
+    browseStack = [{ id: folder.id, name: folder.name }];
     driveState.folderId = folder.id;
     driveState.folderName = folder.name;
     saveDriveState();
+    syncBrowse();
     driveStatus('');
   } catch (error) {
     driveStatus(`Erro: ${error.message}`);
@@ -584,15 +634,18 @@ async function runDrive(action) {
 
 async function pullFromDrive(folderId) {
   const tracked = driveState.files;
-  const { markdown: remotes, others, failed } = await scanFolder(folderId);
+  const { markdown: remotes, others, failed, raw } = await scanFolder(folderId);
   driveState.folderId = folderId;
 
   if (!remotes.length) {
     refresh();
-    const inaccessible = failed ? ` (${failed} pasta(s) inacessível(is))` : '';
-    return driveStatus(others.length
-      ? `Nenhum .md na pasta${inaccessible} — há ${others.length} arquivo(s) de outro tipo (PDF etc.). O app importa somente arquivos .md.`
-      : `A pasta não retornou arquivos .md${inaccessible}.`);
+    if (others.length) {
+      const inaccessible = failed ? ` (${failed} pasta(s) inacessível(is))` : '';
+      return driveStatus(`Nenhum .md na pasta${inaccessible} — há ${others.length} arquivo(s) de outro tipo (PDF etc.). O app importa somente arquivos .md.`);
+    }
+    return driveStatus(raw === 0 && !failed
+      ? 'O Drive não devolveu arquivos acessíveis — repita "Escolher pasta" para renovar a autorização.'
+      : 'Nenhum .md encontrado — a pasta contém apenas subpastas sem arquivos.');
   }
 
   const fresh = [];
