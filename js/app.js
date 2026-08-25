@@ -1,6 +1,10 @@
 import { allCards, saveCard, removeCard, clearCards, loadPinned, savePinned } from './store.js';
 import { parseCard, serializeCard } from './card-format.js';
 import { importFiles, exportCard, exportZip } from './io.js';
+import {
+  parseFolderLink, connect, listMarkdown, readFile, fileModifiedTime, writeFile, createFile, hashText,
+} from './drive.js';
+import { DRIVE_CLIENT_ID } from './config.js';
 
 const MODE_KEY = 'flashcards.mode';
 
@@ -36,6 +40,8 @@ function setMode(mode) {
 }
 
 $('#import').onclick = () => $('#file-input').click();
+
+$('#drive').onclick = openDriveDialog;
 
 $('#file-input').onchange = async ({ target }) => {
   for (const card of await importFiles(target.files)) saveCard(card);
@@ -490,6 +496,145 @@ function shuffle(array) {
     [array[i], array[j]] = [array[j], array[i]];
   }
   return array;
+}
+
+const DRIVE_KEY = 'flashcards.drive';
+let driveState = JSON.parse(localStorage.getItem(DRIVE_KEY) ?? '{}');
+driveState.files ??= {};
+
+function saveDriveState() {
+  localStorage.setItem(DRIVE_KEY, JSON.stringify(driveState));
+}
+
+const clientId = () => localStorage.getItem('flashcards.clientId') || DRIVE_CLIENT_ID;
+
+function driveStatus(text) {
+  const el = $('#drive-status');
+  if (el) el.textContent = text;
+}
+
+function openDriveDialog() {
+  let dialog = $('#drive-dialog');
+  if (!dialog) {
+    dialog = document.createElement('dialog');
+    dialog.id = 'drive-dialog';
+    document.body.append(dialog);
+  }
+  dialog.innerHTML = `
+    <h2>Google Drive</h2>
+    <p class="muted hint">Paste a link to a Drive folder you have access to.
+      Pull imports its .md songs; Push uploads your cards.</p>
+    <input id="drive-folder" placeholder="https://drive.google.com/drive/folders/…">
+    <div class="dialog-actions">
+      <button id="drive-pull">Pull</button>
+      <button id="drive-push">Push all</button>
+      <button id="drive-close" type="button">Close</button>
+    </div>
+    <p id="drive-status" class="muted hint"></p>`;
+  dialog.querySelector('#drive-folder').value = driveState.folderLink ?? '';
+  dialog.querySelector('#drive-close').onclick = () => dialog.close();
+  dialog.querySelector('#drive-pull').onclick = () => runDrive(pullFromDrive);
+  dialog.querySelector('#drive-push').onclick = () => runDrive(pushToDrive);
+  dialog.showModal();
+}
+
+async function runDrive(action) {
+  if (!clientId()) return driveStatus('Missing OAuth client ID — set it in js/config.js.');
+  const folderId = parseFolderLink($('#drive-folder').value);
+  if (!folderId) return driveStatus('Paste a valid folder link first.');
+  driveState.folderLink = $('#drive-folder').value.trim();
+  saveDriveState();
+  driveStatus('Connecting to Google…');
+  try {
+    await connect(clientId());
+    driveStatus('Syncing…');
+    await action(folderId);
+  } catch (error) {
+    driveStatus(`Error: ${error.message}`);
+  }
+}
+
+async function pullFromDrive(folderId) {
+  const tracked = driveState.files;
+  const remotes = await listMarkdown(folderId);
+  driveState.folderId = folderId;
+
+  const fresh = [];
+  const conflicts = [];
+  for (const file of remotes) {
+    const entry = tracked[file.id];
+    const card = entry && allCards().find(c => c.id === entry.cardId);
+    if (!card) fresh.push(file);
+    else if (file.modifiedTime === entry.modifiedTime) continue;
+    else if (hashText(serializeCard(card)) === entry.mdHash) fresh.push(file);
+    else conflicts.push(file);
+  }
+  let kept = 0;
+  if (conflicts.length && !confirm(
+    `${conflicts.length} song(s) changed both on Drive and locally:\n` +
+    conflicts.map(f => f.name).join('\n') +
+    '\n\nReplace the local edits with the Drive versions?')) {
+    kept = conflicts.length;
+  } else fresh.push(...conflicts);
+
+  for (const file of fresh) {
+    const existing = allCards().find(c => c.name === file.name);
+    const card = parseCard(file.name, await readFile(file.id), existing?.id);
+    saveCard(card);
+    tracked[file.id] = {
+      cardId: card.id,
+      name: file.name,
+      modifiedTime: file.modifiedTime,
+      mdHash: hashText(serializeCard(card)),
+    };
+  }
+  saveDriveState();
+  refresh();
+  driveStatus(`Pulled ${fresh.length} song(s)${kept ? `, kept ${kept} local edit(s)` : ''}.`);
+}
+
+async function pushToDrive(folderId) {
+  driveState.folderId = folderId;
+  const tracked = driveState.files;
+  const byCard = new Map(Object.entries(tracked).map(([fileId, entry]) => [entry.cardId, fileId]));
+  const cards = allCards();
+  let created = 0, updated = 0, failed = 0, done = 0;
+
+  for (const card of cards) {
+    driveStatus(`Syncing ${++done}/${cards.length}…`);
+    const digest = hashText(serializeCard(card));
+    const fileId = byCard.get(card.id);
+    try {
+      if (fileId) {
+        const entry = tracked[fileId];
+        if (entry.mdHash === digest) continue;
+        const remoteTime = await fileModifiedTime(fileId);
+        if (remoteTime !== entry.modifiedTime &&
+            !confirm(`'${card.name}' changed on Drive since your last sync. Overwrite it?`)) {
+          entry.modifiedTime = remoteTime;
+          continue;
+        }
+        const result = await writeFile(fileId, serializeCard(card));
+        Object.assign(entry, { modifiedTime: result.modifiedTime, mdHash: digest });
+        updated++;
+      } else {
+        const result = await createFile(folderId, card.name, serializeCard(card));
+        tracked[result.id] = {
+          cardId: card.id,
+          name: card.name,
+          modifiedTime: result.modifiedTime,
+          mdHash: digest,
+        };
+        created++;
+      }
+    } catch (error) {
+      failed++;
+      console.warn(`${card.name}: ${error.message}`);
+    }
+  }
+  saveDriveState();
+  refresh();
+  driveStatus(`Pushed ${created} created, ${updated} updated${failed ? `, ${failed} failed` : ''}.`);
 }
 
 refresh();
