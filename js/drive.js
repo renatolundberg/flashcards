@@ -63,11 +63,14 @@ export async function pickFolder(clientId, apiKey) {
   await loadPickerApi();
   const { picker } = window.google;
   return new Promise(resolve => {
-    const view = new picker.View(picker.ViewId.FOLDERS);
+    const view = new picker.DocsView(picker.ViewId.FOLDERS)
+      .setSelectFolderEnabled(true)
+      .setMimeTypes('application/vnd.google-apps.folder');
     new picker.PickerBuilder()
       .setAppId(clientId.split('-')[0])
       .setDeveloperKey(apiKey)
       .setOAuthToken(session.token)
+      .setTitle('Escolha uma pasta')
       .addView(view)
       .setCallback(data => {
         if (data.action === picker.Action.PICKED) {
