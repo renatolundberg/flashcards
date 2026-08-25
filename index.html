@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Flashcards</title>
+  <link rel="stylesheet" href="style.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+  <header>
+    <h1>Flashcards</h1>
+    <span id="count" class="muted"></span>
+    <button id="play-all" class="study-only">Play all</button>
+    <div id="mode" role="group" aria-label="Mode">
+      <button id="mode-edit">Edit</button>
+      <button id="mode-view">View</button>
+      <button id="mode-study">Study</button>
+    </div>
+    <input type="file" id="file-input" accept=".md,.zip" multiple hidden>
+    <button id="import" class="edit-only">Import</button>
+    <button id="new-card" class="edit-only">New card</button>
+    <button id="export-zip" class="edit-only">Export view (.zip)</button>
+    <button id="clear" class="edit-only">Clear all</button>
+  </header>
+
+  <main>
+    <nav id="tags" aria-label="Hashtags"></nav>
+    <section id="cards"></section>
+    <aside id="pinned" aria-label="Pinned cards"></aside>
+  </main>
+
+  <div id="player" hidden>
+    <div class="player-bar">
+      <span id="player-info" class="muted"></span>
+      <button id="player-close" aria-label="Close player">✕</button>
+    </div>
+    <div id="player-frame"></div>
+  </div>
+</body>
+</html>

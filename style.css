@@ -1,0 +1,217 @@
+:root { color-scheme: light dark; }
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+header {
+  display: flex;
+  gap: .75rem;
+  align-items: center;
+  padding: .6rem 1rem;
+  border-bottom: 1px solid #8884;
+}
+
+h1 { font-size: 1.1rem; margin: 0 auto 0 0; }
+
+.muted { opacity: .55; }
+
+#mode { display: flex; }
+
+#mode button {
+  border: 1px solid #8888;
+  background: none;
+  color: inherit;
+  padding: .25rem .8rem;
+}
+
+#mode button:first-child { border-radius: 999px 0 0 999px; }
+#mode button:last-child { border-radius: 0 999px 999px 0; }
+
+#mode button + button { border-left: none; }
+
+#mode button.on {
+  background: #3d8bd4;
+  border-color: #3d8bd4;
+  color: #fff;
+}
+
+body.view-mode .edit-only { display: none; }
+
+.study-only { display: none; }
+body.study-mode .study-only { display: inline-block; }
+
+body.study-mode main { grid-template-columns: 220px 1fr; }
+body.study-mode #pinned { display: none; }
+
+.study-card {
+  max-width: 44rem;
+  margin: 2.5rem auto;
+  padding: 1.75rem 2.25rem;
+  border: 1px solid #8888;
+  border-radius: 14px;
+  cursor: pointer;
+  min-height: 16rem;
+}
+
+.study-card .md { font-size: 1.15rem; line-height: 1.55; }
+
+.study-card .md h1 { font-size: 1.3rem; margin-top: 0; }
+
+.study-hint { text-align: center; margin-bottom: 0; }
+
+button { cursor: pointer; }
+
+main {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 220px 1fr 1fr;
+  min-height: 0;
+}
+
+#tags {
+  padding: .75rem;
+  border-right: 1px solid #8884;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: .4rem;
+}
+
+#tags hr {
+  align-self: stretch;
+  border: none;
+  border-top: 1px solid #8884;
+  margin: .15rem 0;
+}
+
+.hint { margin: 0; font-size: .85rem; line-height: 1.45; }
+
+.tag {
+  border-radius: 999px;
+  padding: .2rem .7rem;
+  font-size: .85rem;
+  color: inherit;
+  background: transparent;
+  border: 1px solid #8888;
+}
+
+.tag.on {
+  background: #3d8bd4;
+  border-color: transparent;
+  color: #fff;
+}
+
+#cards, #pinned {
+  padding: 1rem 1.25rem;
+  overflow-y: auto;
+  min-width: 0;
+}
+
+#cards { border-right: 1px solid #8884; }
+
+#cards hr, #pinned hr {
+  border: none;
+  border-top: 1px solid #8884;
+  margin: 0 0 1.5rem;
+}
+
+.card-head { display: flex; align-items: flex-start; gap: .5rem; }
+.card-head h2 { margin: 0 auto 0 0; }
+
+.icon-btn {
+  border: none;
+  background: none;
+  color: inherit;
+  opacity: .5;
+  padding: .15rem;
+  flex-shrink: 0;
+}
+
+.icon-btn:hover { opacity: 1; color: #3d8bd4; }
+
+.icon-btn svg { width: 18px; height: 18px; fill: currentColor; display: block; }
+
+.card-tags { display: flex; flex-wrap: wrap; gap: .35rem; margin-bottom: 1rem; }
+
+.card-tags span {
+  border-radius: 999px;
+  padding: .1rem .6rem;
+  font-size: .8rem;
+  border: 1px solid #8888;
+}
+
+.md img { max-width: 100%; }
+.md pre { padding: .75rem; overflow-x: auto; }
+
+.actions { margin-top: 1.5rem; display: flex; gap: .5rem; }
+
+.view-mode article.clickable { cursor: pointer; }
+
+.view-mode article.is-pinned {
+  box-shadow: inset 4px 0 0 #3d8bd4;
+  padding-left: .75rem;
+}
+
+.view-mode .card-tags span {
+  font-size: .96rem;
+  padding: .12rem .72rem;
+}
+
+.view-mode .tag {
+  font-size: 1.02rem;
+  padding: .24rem .84rem;
+}
+
+#player {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  width: min(30rem, calc(100vw - 2rem));
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 8px 24px #0009;
+  z-index: 50;
+  background: #111;
+}
+
+.player-bar { display: flex; align-items: center; background: #1c1c1c; }
+
+#player-info { font-size: .85rem; padding-left: .8rem; margin-right: auto; }
+
+#player-close {
+  border: none;
+  background: none;
+  color: #eee;
+  font-size: 1.1rem;
+  padding: .45rem .8rem;
+}
+
+#player-close:hover { color: #fff; background: #333; }
+
+#player iframe {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border: 0;
+}
+
+form { display: flex; flex-direction: column; gap: .5rem; }
+
+form input, form textarea {
+  font: inherit;
+  padding: .5rem;
+  border-radius: 6px;
+  border: 1px solid #8888;
+  background: transparent;
+  color: inherit;
+}
+
+form textarea { min-height: 45vh; font-family: ui-monospace, monospace; }
