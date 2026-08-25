@@ -3,22 +3,22 @@ const API = 'https://www.googleapis.com';
 
 export const session = { token: null, expiresAt: 0 };
 
-export function parseFolderLink(text) {
-  const value = text.trim();
-  const fromUrl = value.match(/folders\/([A-Za-z0-9_-]+)/);
-  if (fromUrl) return fromUrl[1];
-  return /^[A-Za-z0-9_-]{15,}$/.test(value) ? value : null;
-}
-
-function loadGis() {
-  if (window.google?.accounts?.oauth2) return Promise.resolve();
+function loadScript(src) {
   return new Promise((resolve, reject) => {
     const script = document.createElement('script');
-    script.src = 'https://accounts.google.com/gsi/client';
+    script.src = src;
     script.onload = resolve;
-    script.onerror = () => reject(new Error('Could not load Google Identity Services'));
+    script.onerror = () => reject(new Error(`Could not load ${src}`));
     document.head.append(script);
   });
+}
+
+async function loadGis() {
+  if (!window.google?.accounts?.oauth2) await loadScript('https://accounts.google.com/gsi/client');
+}
+
+async function loadPickerApi() {
+  if (!window.google?.picker) await loadScript('https://apis.google.com/js/api.js');
 }
 
 async function requestToken(clientId, prompt) {
@@ -48,6 +48,28 @@ export async function connect(clientId) {
   } catch {
     return requestToken(clientId, 'consent');
   }
+}
+
+export async function pickFolder(clientId, apiKey) {
+  await connect(clientId);
+  await loadPickerApi();
+  const { picker } = window.google;
+  return new Promise(resolve => {
+    const view = new picker.View(picker.ViewId.FOLDERS);
+    new picker.PickerBuilder()
+      .setAppId(clientId.split('-')[0])
+      .setDeveloperKey(apiKey)
+      .setOAuthToken(session.token)
+      .addView(view)
+      .setCallback(data => {
+        if (data.action === picker.Action.PICKED) {
+          const doc = data.docs?.[0];
+          resolve(doc ? { id: doc.id, name: doc.name } : null);
+        } else if (data.action === picker.Action.CANCEL) resolve(null);
+      })
+      .build()
+      .setVisible(true);
+  });
 }
 
 async function driveFetch(path, options = {}) {

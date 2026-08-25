@@ -2,9 +2,9 @@ import { allCards, saveCard, removeCard, clearCards, loadPinned, savePinned } fr
 import { parseCard, serializeCard } from './card-format.js';
 import { importFiles, exportCard, exportZip } from './io.js';
 import {
-  parseFolderLink, connect, listMarkdown, readFile, fileModifiedTime, writeFile, createFile, hashText,
+  connect, pickFolder, listMarkdown, readFile, fileModifiedTime, writeFile, createFile, hashText,
 } from './drive.js';
-import { DRIVE_CLIENT_ID } from './config.js';
+import { DRIVE_CLIENT_ID, DRIVE_API_KEY } from './config.js';
 
 const MODE_KEY = 'flashcards.mode';
 
@@ -507,6 +507,7 @@ function saveDriveState() {
 }
 
 const clientId = () => localStorage.getItem('flashcards.clientId') || DRIVE_CLIENT_ID;
+const apiKey = () => localStorage.getItem('flashcards.apiKey') || DRIVE_API_KEY;
 
 function driveStatus(text) {
   const el = $('#drive-status');
@@ -522,33 +523,55 @@ function openDriveDialog() {
   }
   dialog.innerHTML = `
     <h2>Google Drive</h2>
-    <p class="muted hint">Cole o link de uma pasta do Drive à qual você tenha acesso.
+    <p class="muted hint">Escolha uma pasta do Drive à qual você tenha acesso.
       Baixar importa os flashcards (.md) da pasta e subpastas; Enviar sobe seus cards.</p>
-    <input id="drive-folder" placeholder="https://drive.google.com/drive/folders/…">
+    <div class="dialog-actions">
+      <button id="drive-choose">Escolher pasta…</button>
+      <span id="drive-folder-label" class="hint"></span>
+    </div>
     <div class="dialog-actions">
       <button id="drive-pull">Baixar</button>
       <button id="drive-push">Enviar</button>
       <button id="drive-close" type="button">Fechar</button>
     </div>
     <p id="drive-status" class="muted hint"></p>`;
-  dialog.querySelector('#drive-folder').value = driveState.folderLink ?? '';
+  syncFolderLabel();
   dialog.querySelector('#drive-close').onclick = () => dialog.close();
+  dialog.querySelector('#drive-choose').onclick = chooseFolder;
   dialog.querySelector('#drive-pull').onclick = () => runDrive(pullFromDrive);
   dialog.querySelector('#drive-push').onclick = () => runDrive(pushToDrive);
   dialog.showModal();
 }
 
-async function runDrive(action) {
+function syncFolderLabel() {
+  const el = $('#drive-folder-label');
+  if (el) el.textContent = driveState.folderName ? `Pasta: ${driveState.folderName}` : 'Nenhuma pasta escolhida.';
+}
+
+async function chooseFolder() {
   if (!clientId()) return driveStatus('Client ID do Google não configurado — defina em js/config.js.');
-  const folderId = parseFolderLink($('#drive-folder').value);
-  if (!folderId) return driveStatus('Primeiro cole um link de pasta válido.');
-  driveState.folderLink = $('#drive-folder').value.trim();
-  saveDriveState();
+  if (!apiKey()) return driveStatus('Chave de API não configurada — defina DRIVE_API_KEY em js/config.js.');
+  driveStatus('Abrindo o Drive…');
+  try {
+    const folder = await pickFolder(clientId(), apiKey());
+    driveStatus('');
+    if (!folder) return;
+    driveState.folderId = folder.id;
+    driveState.folderName = folder.name;
+    saveDriveState();
+    syncFolderLabel();
+  } catch (error) {
+    driveStatus(`Erro: ${error.message}`);
+  }
+}
+
+async function runDrive(action) {
+  if (!driveState.folderId) return driveStatus('Primeiro escolha uma pasta.');
   driveStatus('Conectando ao Google…');
   try {
     await connect(clientId());
     driveStatus('Sincronizando…');
-    await action(folderId);
+    await action(driveState.folderId);
   } catch (error) {
     driveStatus(`Erro: ${error.message}`);
   }
