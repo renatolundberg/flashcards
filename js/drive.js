@@ -98,6 +98,7 @@ const GOOGLE_MIME = 'application/vnd.google-apps.';
 export async function scanFolder(rootId) {
   const markdown = [];
   const others = [];
+  let failed = 0;
   const queue = [rootId];
   while (queue.length) {
     const folderId = queue.shift();
@@ -106,6 +107,8 @@ export async function scanFolder(rootId) {
         q: `'${folderId}' in parents and trashed = false`,
         fields: 'nextPageToken, files(id, name, mimeType, modifiedTime)',
         pageSize: '200',
+        supportsAllDrives: 'true',
+        includeItemsFromAllDrives: 'true',
       });
       do {
         const data = await driveFetch(`/drive/v3/files?${params}`).then(r => r.json());
@@ -117,26 +120,26 @@ export async function scanFolder(rootId) {
         }
         params.set('pageToken', data.nextPageToken ?? '');
       } while (params.get('pageToken'));
-    } catch (error) {
-      console.warn(`Skipping unreadable folder ${folderId}: ${error.message}`);
+    } catch {
+      failed++;
     }
   }
-  return { markdown, others };
-}
-
-export async function readFile(fileId) {
-  return driveFetch(`/drive/v3/files/${fileId}?alt=media`).then(r => r.text());
+  return { markdown, others, failed };
 }
 
 export async function fileModifiedTime(fileId) {
-  return driveFetch(`/drive/v3/files/${fileId}?fields=modifiedTime`)
+  return driveFetch(`/drive/v3/files/${fileId}?fields=modifiedTime&supportsAllDrives=true`)
     .then(r => r.json())
     .then(data => data.modifiedTime);
 }
 
+export async function readFile(fileId) {
+  return driveFetch(`/drive/v3/files/${fileId}?alt=media&supportsAllDrives=true`).then(r => r.text());
+}
+
 export async function writeFile(fileId, text) {
   return driveFetch(
-    `/upload/drive/v3/files/${fileId}?uploadType=media&fields=id,modifiedTime`,
+    `/upload/drive/v3/files/${fileId}?uploadType=media&fields=id,modifiedTime&supportsAllDrives=true`,
     { method: 'PATCH', headers: { 'Content-Type': 'text/markdown' }, body: text },
   ).then(r => r.json());
 }
@@ -157,7 +160,7 @@ export async function createFile(folderId, name, text) {
     '',
   ].join('\r\n');
   return driveFetch(
-    '/upload/drive/v3/files?uploadType=multipart&fields=id,modifiedTime',
+    '/upload/drive/v3/files?uploadType=multipart&fields=id,modifiedTime&supportsAllDrives=true',
     {
       method: 'POST',
       headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },

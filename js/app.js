@@ -584,14 +584,15 @@ async function runDrive(action) {
 
 async function pullFromDrive(folderId) {
   const tracked = driveState.files;
-  const { markdown: remotes, others } = await scanFolder(folderId);
+  const { markdown: remotes, others, failed } = await scanFolder(folderId);
   driveState.folderId = folderId;
 
   if (!remotes.length) {
     refresh();
+    const inaccessible = failed ? ` (${failed} pasta(s) inacessível(is))` : '';
     return driveStatus(others.length
-      ? `Nenhum .md na pasta — há ${others.length} arquivo(s) de outro tipo (PDF etc.). O app importa somente arquivos .md.`
-      : 'A pasta escolhida está vazia.');
+      ? `Nenhum .md na pasta${inaccessible} — há ${others.length} arquivo(s) de outro tipo (PDF etc.). O app importa somente arquivos .md.`
+      : `A pasta não retornou arquivos .md${inaccessible}.`);
   }
 
   const fresh = [];
