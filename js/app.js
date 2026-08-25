@@ -2,7 +2,7 @@ import { allCards, saveCard, removeCard, clearCards, loadPinned, savePinned } fr
 import { parseCard, serializeCard } from './card-format.js';
 import { importFiles, exportCard, exportZip } from './io.js';
 import {
-  connect, pickFolder, listMarkdown, readFile, fileModifiedTime, writeFile, createFile, hashText,
+  connect, pickFolder, scanFolder, readFile, fileModifiedTime, writeFile, createFile, hashText,
 } from './drive.js';
 import { DRIVE_CLIENT_ID, DRIVE_API_KEY } from './config.js';
 
@@ -561,6 +561,7 @@ async function chooseFolder() {
     driveState.folderId = folder.id;
     driveState.folderName = folder.name;
     saveDriveState();
+    driveStatus('');
   } catch (error) {
     driveStatus(`Erro: ${error.message}`);
   } finally {
@@ -583,8 +584,15 @@ async function runDrive(action) {
 
 async function pullFromDrive(folderId) {
   const tracked = driveState.files;
-  const remotes = await listMarkdown(folderId);
+  const { markdown: remotes, others } = await scanFolder(folderId);
   driveState.folderId = folderId;
+
+  if (!remotes.length) {
+    refresh();
+    return driveStatus(others.length
+      ? `Nenhum .md na pasta — há ${others.length} arquivo(s) de outro tipo (PDF etc.). O app importa somente arquivos .md.`
+      : 'A pasta escolhida está vazia.');
+  }
 
   const fresh = [];
   const conflicts = [];

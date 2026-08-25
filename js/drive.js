@@ -95,8 +95,9 @@ async function driveFetch(path, options = {}) {
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
 const GOOGLE_MIME = 'application/vnd.google-apps.';
 
-export async function listMarkdown(rootId) {
-  const files = [];
+export async function scanFolder(rootId) {
+  const markdown = [];
+  const others = [];
   const queue = [rootId];
   while (queue.length) {
     const folderId = queue.shift();
@@ -111,7 +112,8 @@ export async function listMarkdown(rootId) {
         for (const item of data.files ?? []) {
           if (item.mimeType === FOLDER_MIME) queue.push(item.id);
           else if (item.name.toLowerCase().endsWith('.md') &&
-                   !item.mimeType?.startsWith(GOOGLE_MIME)) files.push(item);
+                   !item.mimeType?.startsWith(GOOGLE_MIME)) markdown.push(item);
+          else others.push(item);
         }
         params.set('pageToken', data.nextPageToken ?? '');
       } while (params.get('pageToken'));
@@ -119,7 +121,7 @@ export async function listMarkdown(rootId) {
       console.warn(`Skipping unreadable folder ${folderId}: ${error.message}`);
     }
   }
-  return files;
+  return { markdown, others };
 }
 
 export async function readFile(fileId) {
