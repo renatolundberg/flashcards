@@ -18,7 +18,15 @@ async function loadGis() {
 }
 
 async function loadPickerApi() {
-  if (!window.google?.picker) await loadScript('https://apis.google.com/js/api.js');
+  if (window.google?.picker) return;
+  await loadScript('https://apis.google.com/js/api.js');
+  if (!window.gapi) throw new Error('Google API loader failed');
+  await new Promise((resolve, reject) => {
+    gapi.load('picker', {
+      callback: resolve,
+      onerror: () => reject(new Error('Could not load Google Picker')),
+    });
+  });
 }
 
 async function requestToken(clientId, prompt) {
