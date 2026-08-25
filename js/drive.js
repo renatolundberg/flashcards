@@ -59,19 +59,34 @@ async function driveFetch(path, options = {}) {
   return response;
 }
 
-export async function listMarkdown(folderId) {
-  const params = new URLSearchParams({
-    q: `'${folderId}' in parents and trashed = false`,
-    fields: 'nextPageToken, files(id, name, modifiedTime)',
-    pageSize: '200',
-  });
+const FOLDER_MIME = 'application/vnd.google-apps.folder';
+const GOOGLE_MIME = 'application/vnd.google-apps.';
+
+export async function listMarkdown(rootId) {
   const files = [];
-  do {
-    const data = await driveFetch(`/drive/v3/files?${params}`).then(r => r.json());
-    files.push(...data.files ?? []);
-    params.set('pageToken', data.nextPageToken ?? '');
-  } while (params.get('pageToken'));
-  return files.filter(file => file.name.toLowerCase().endsWith('.md'));
+  const queue = [rootId];
+  while (queue.length) {
+    const folderId = queue.shift();
+    try {
+      const params = new URLSearchParams({
+        q: `'${folderId}' in parents and trashed = false`,
+        fields: 'nextPageToken, files(id, name, mimeType, modifiedTime)',
+        pageSize: '200',
+      });
+      do {
+        const data = await driveFetch(`/drive/v3/files?${params}`).then(r => r.json());
+        for (const item of data.files ?? []) {
+          if (item.mimeType === FOLDER_MIME) queue.push(item.id);
+          else if (item.name.toLowerCase().endsWith('.md') &&
+                   !item.mimeType?.startsWith(GOOGLE_MIME)) files.push(item);
+        }
+        params.set('pageToken', data.nextPageToken ?? '');
+      } while (params.get('pageToken'));
+    } catch (error) {
+      console.warn(`Skipping unreadable folder ${folderId}: ${error.message}`);
+    }
+  }
+  return files;
 }
 
 export async function readFile(fileId) {
