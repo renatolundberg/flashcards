@@ -58,7 +58,7 @@ $('#export-zip').onclick = () => exportZip(visibleCards());
 
 $('#clear').onclick = () => {
   const count = allCards().length;
-  if (!count || !confirm(`Delete all ${count} cards?`)) return;
+  if (!count || !confirm(`Apagar todos os ${count} cards?`)) return;
   clearCards();
   state.pinned.clear();
   savePinned(state.pinned);
@@ -115,8 +115,8 @@ function renderTagBar() {
   const related = countBy(relatedTags);
   if (!related.size && state.selectedTags.size) {
     nav.append(hint(visibleCards().length
-      ? 'No further hashtags.'
-      : 'No cards match this combination.'));
+      ? 'Nenhuma outra hashtag.'
+      : 'Nenhum card com essa combinação.'));
   }
   for (const [tag, count] of related) nav.append(makeChip(tag, count));
 }
@@ -164,8 +164,8 @@ function renderCards() {
 
   if (!cards.length) {
     pane.append(hint(allCards().length
-      ? 'No cards match the selected hashtags.'
-      : 'No cards yet — use Import to load .md files or a .zip.'));
+      ? 'Nenhum card com as hashtags selecionadas.'
+      : 'Nenhum card ainda — use Importar para carregar arquivos .md ou um .zip.'));
     return;
   }
   for (const [i, card] of cards.entries()) {
@@ -184,8 +184,8 @@ function renderPinned() {
 
   if (!pinnedCards.length) {
     pane.append(hint(state.mode === 'view'
-      ? 'Nothing pinned yet — tap a card to pin it here while you browse.'
-      : 'Nothing pinned yet — use the pin on a card to keep it here while you browse.'));
+      ? 'Nada fixado ainda — toque num card para fixá-lo aqui enquanto navega.'
+      : 'Nada fixado ainda — use o ícone de fixar num card para mantê-lo aqui enquanto navega.'));
     return;
   }
   for (const [i, card] of pinnedCards.entries()) {
@@ -198,8 +198,8 @@ function pinButton(id, pinned) {
   const btn = document.createElement('button');
   btn.className = 'icon-btn';
   btn.innerHTML = pinned ? ICONS.close : ICONS.pin;
-  btn.title = pinned ? 'Unpin' : 'Pin';
-  btn.setAttribute('aria-label', pinned ? 'Unpin card' : 'Pin card');
+  btn.title = pinned ? 'Desfixar' : 'Fixar';
+  btn.setAttribute('aria-label', pinned ? 'Desfixar card' : 'Fixar card');
   btn.onclick = () => togglePin(id);
   return btn;
 }
@@ -272,8 +272,8 @@ function renderStudy(pane) {
 
   if (!pool.length) {
     pane.append(hint(allCards().length
-      ? 'No cards match the selected hashtags.'
-      : 'No cards yet — use Import in Edit mode to load songs.'));
+      ? 'Nenhum card com as hashtags selecionadas.'
+      : 'Nenhum card ainda — use Importar no modo Editar para carregar flashcards.'));
     return;
   }
   if (!pool.some(card => card.id === state.studyCardId)) {
@@ -305,7 +305,7 @@ function renderStudy(pane) {
 
   const tip = document.createElement('p');
   tip.className = 'muted hint study-hint';
-  tip.textContent = state.studyRevealed ? 'Tap for the next song' : 'Tap to reveal the full song';
+  tip.textContent = state.studyRevealed ? 'Toque para o próximo flashcard' : 'Toque para revelar o flashcard completo';
   el.append(tip);
 
   el.onclick = event => {
@@ -326,10 +326,10 @@ function actionButtons(card) {
   const row = document.createElement('div');
   row.className = 'actions';
   row.append(
-    button('Edit', () => { state.editingId = card.id; refresh(); }),
-    button('Export .md', () => exportCard(card)),
-    button('Delete', () => {
-      if (!confirm(`Delete ${card.name}?`)) return;
+    button('Editar', () => { state.editingId = card.id; refresh(); }),
+    button('Exportar .md', () => exportCard(card)),
+    button('Apagar', () => {
+      if (!confirm(`Apagar ${card.name}?`)) return;
       removeCard(card.id);
       state.pinned.delete(card.id);
       savePinned(state.pinned);
@@ -346,16 +346,16 @@ function editorForm() {
 
   const form = document.createElement('form');
   const name = document.createElement('input');
-  name.placeholder = 'file name (e.g. closures.md)';
+  name.placeholder = 'nome do arquivo (ex.: pontos.md)';
   name.value = existing?.name ?? '';
 
   const text = document.createElement('textarea');
-  text.placeholder = 'Markdown body…\n\n#tag1 #tag2';
+  text.placeholder = 'Corpo em Markdown…\n\n#tag1 #tag2';
   text.value = existing ? serializeCard(existing) : '';
 
   form.append(name, text,
-    button('Save', null, { type: 'submit' }),
-    button('Cancel', discardEditor));
+    button('Salvar', null, { type: 'submit' }),
+    button('Cancelar', discardEditor));
 
   form.onsubmit = event => {
     event.preventDefault();
@@ -487,7 +487,7 @@ function setInfo(text) {
 }
 
 function syncPlayAllButton() {
-  $('#play-all').textContent = playingAll ? 'Stop' : 'Play all';
+  $('#play-all').textContent = playingAll ? 'Parar' : 'Tocar tudo';
 }
 
 function shuffle(array) {
@@ -522,13 +522,13 @@ function openDriveDialog() {
   }
   dialog.innerHTML = `
     <h2>Google Drive</h2>
-    <p class="muted hint">Paste a link to a Drive folder you have access to.
-      Pull imports its .md songs; Push uploads your cards.</p>
+    <p class="muted hint">Cole o link de uma pasta do Drive à qual você tenha acesso.
+      Baixar importa os flashcards (.md) da pasta e subpastas; Enviar sobe seus cards.</p>
     <input id="drive-folder" placeholder="https://drive.google.com/drive/folders/…">
     <div class="dialog-actions">
-      <button id="drive-pull">Pull</button>
-      <button id="drive-push">Push all</button>
-      <button id="drive-close" type="button">Close</button>
+      <button id="drive-pull">Baixar</button>
+      <button id="drive-push">Enviar</button>
+      <button id="drive-close" type="button">Fechar</button>
     </div>
     <p id="drive-status" class="muted hint"></p>`;
   dialog.querySelector('#drive-folder').value = driveState.folderLink ?? '';
@@ -539,18 +539,18 @@ function openDriveDialog() {
 }
 
 async function runDrive(action) {
-  if (!clientId()) return driveStatus('Missing OAuth client ID — set it in js/config.js.');
+  if (!clientId()) return driveStatus('Client ID do Google não configurado — defina em js/config.js.');
   const folderId = parseFolderLink($('#drive-folder').value);
-  if (!folderId) return driveStatus('Paste a valid folder link first.');
+  if (!folderId) return driveStatus('Primeiro cole um link de pasta válido.');
   driveState.folderLink = $('#drive-folder').value.trim();
   saveDriveState();
-  driveStatus('Connecting to Google…');
+  driveStatus('Conectando ao Google…');
   try {
     await connect(clientId());
-    driveStatus('Syncing…');
+    driveStatus('Sincronizando…');
     await action(folderId);
   } catch (error) {
-    driveStatus(`Error: ${error.message}`);
+    driveStatus(`Erro: ${error.message}`);
   }
 }
 
@@ -571,9 +571,12 @@ async function pullFromDrive(folderId) {
   }
   let kept = 0;
   if (conflicts.length && !confirm(
-    `${conflicts.length} song(s) changed both on Drive and locally:\n` +
+    (conflicts.length === 1
+      ? '1 flashcard mudou'
+      : `${conflicts.length} flashcards mudaram`) +
+    ' no Drive e também localmente:\n' +
     conflicts.map(f => f.name).join('\n') +
-    '\n\nReplace the local edits with the Drive versions?')) {
+    '\n\nSubstituir as edições locais pelas versões do Drive?')) {
     kept = conflicts.length;
   } else fresh.push(...conflicts);
 
@@ -590,7 +593,9 @@ async function pullFromDrive(folderId) {
   }
   saveDriveState();
   refresh();
-  driveStatus(`Pulled ${fresh.length} song(s)${kept ? `, kept ${kept} local edit(s)` : ''}.`);
+  const parts = [fresh.length === 1 ? 'Baixado 1 flashcard' : `Baixados ${fresh.length} flashcards`];
+  if (kept) parts.push(kept === 1 ? '1 edição local mantida' : `${kept} edições locais mantidas`);
+  driveStatus(parts.join(' — ') + '.');
 }
 
 async function pushToDrive(folderId) {
@@ -601,7 +606,7 @@ async function pushToDrive(folderId) {
   let created = 0, updated = 0, failed = 0, done = 0;
 
   for (const card of cards) {
-    driveStatus(`Syncing ${++done}/${cards.length}…`);
+    driveStatus(`Sincronizando ${++done}/${cards.length}…`);
     const digest = hashText(serializeCard(card));
     const fileId = byCard.get(card.id);
     try {
@@ -610,7 +615,7 @@ async function pushToDrive(folderId) {
         if (entry.mdHash === digest) continue;
         const remoteTime = await fileModifiedTime(fileId);
         if (remoteTime !== entry.modifiedTime &&
-            !confirm(`'${card.name}' changed on Drive since your last sync. Overwrite it?`)) {
+            !confirm(`'${card.name}' mudou no Drive desde sua última sincronização. Sobrescrever?`)) {
           entry.modifiedTime = remoteTime;
           continue;
         }
@@ -634,7 +639,10 @@ async function pushToDrive(folderId) {
   }
   saveDriveState();
   refresh();
-  driveStatus(`Pushed ${created} created, ${updated} updated${failed ? `, ${failed} failed` : ''}.`);
+  driveStatus(
+    `Enviados: ${created === 1 ? '1 novo' : `${created} novos`}, ` +
+    `${updated === 1 ? '1 atualizado' : `${updated} atualizados`}` +
+    `${failed ? `, ${failed} com falha` : ''}.`);
 }
 
 refresh();
