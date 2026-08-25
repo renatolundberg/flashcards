@@ -93,6 +93,7 @@ async function driveFetch(path, options = {}) {
 }
 
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
+const SHORTCUT_MIME = 'application/vnd.google-apps.shortcut';
 const GOOGLE_MIME = 'application/vnd.google-apps.';
 
 export async function scanFolder(rootId) {
@@ -101,11 +102,23 @@ export async function scanFolder(rootId) {
   return walkByAccessibleSet(rootId);
 }
 
+async function resolveEntry(item) {
+  if (item.mimeType !== SHORTCUT_MIME || !item.shortcutDetails?.targetId) return item;
+  try {
+    const target = await driveFetch(
+      `/drive/v3/files/${item.shortcutDetails.targetId}?fields=id,name,mimeType,modifiedTime&supportsAllDrives=true`,
+    ).then(r => r.json());
+    return target;
+  } catch {
+    return null;
+  }
+}
+
 async function listAccessibleItems() {
   const items = [];
   const params = new URLSearchParams({
     pageSize: '1000',
-    fields: 'nextPageToken, files(id, name, mimeType, modifiedTime, trashed, parents)',
+    fields: 'nextPageToken, files(id, name, mimeType, modifiedTime, trashed, parents, shortcutDetails)',
     supportsAllDrives: 'true',
     includeItemsFromAllDrives: 'true',
   });
@@ -131,13 +144,14 @@ async function walkByParents(rootId) {
   const others = [];
   let failed = 0;
   let raw = 0;
+  const seen = new Set([rootId]);
   const queue = [rootId];
   while (queue.length) {
     const folderId = queue.shift();
     try {
       const params = new URLSearchParams({
         q: `'${folderId}' in parents and trashed = false`,
-        fields: 'nextPageToken, files(id, name, mimeType, modifiedTime)',
+        fields: 'nextPageToken, files(id, name, mimeType, modifiedTime, shortcutDetails)',
         pageSize: '200',
         supportsAllDrives: 'true',
         includeItemsFromAllDrives: 'true',
@@ -146,7 +160,11 @@ async function walkByParents(rootId) {
         const data = await driveFetch(`/drive/v3/files?${params}`).then(r => r.json());
         for (const item of data.files ?? []) {
           raw++;
-          if (classifyInto(item, markdown, others) === 'folder') queue.push(item.id);
+          const entry = await resolveEntry(item);
+          if (!entry) continue;
+          if (entry.mimeType === FOLDER_MIME) {
+            if (!seen.has(entry.id)) { seen.add(entry.id); queue.push(entry.id); }
+          } else classifyInto(entry, markdown, others);
         }
         params.set('pageToken', data.nextPageToken ?? '');
       } while (params.get('pageToken'));
@@ -170,11 +188,16 @@ async function walkByAccessibleSet(rootId) {
   const markdown = [];
   const others = [];
   let raw = 0;
+  const seen = new Set([rootId]);
   const queue = [rootId];
   while (queue.length) {
-    for (const child of childrenOf.get(queue.shift()) ?? []) {
+    for (const item of childrenOf.get(queue.shift()) ?? []) {
       raw++;
-      if (classifyInto(child, markdown, others) === 'folder') queue.push(child.id);
+      const entry = await resolveEntry(item);
+      if (!entry) continue;
+      if (entry.mimeType === FOLDER_MIME) {
+        if (!seen.has(entry.id)) { seen.add(entry.id); queue.push(entry.id); }
+      } else classifyInto(entry, markdown, others);
     }
   }
   return { markdown, others, failed: 0, raw };
@@ -183,12 +206,12 @@ async function walkByAccessibleSet(rootId) {
 export async function listChildren(folderId) {
   const params = new URLSearchParams({
     q: `'${folderId}' in parents and trashed = false`,
-    fields: 'nextPageToken, files(id, name, mimeType)',
+    fields: 'nextPageToken, files(id, name, mimeType, shortcutDetails)',
     pageSize: '1000',
     supportsAllDrives: 'true',
     includeItemsFromAllDrives: 'true',
   });
-  const items = [];
+  let items = [];
   try {
     do {
       const data = await driveFetch(`/drive/v3/files?${params}`).then(r => r.json());
@@ -198,9 +221,16 @@ export async function listChildren(folderId) {
   } catch {
     items.length = 0;
   }
-  if (items.length) return items;
-  return (await listAccessibleItems())
-    .filter(item => !item.trashed && item.parents?.includes(folderId));
+  if (!items.length) {
+    items = (await listAccessibleItems())
+      .filter(item => !item.trashed && item.parents?.includes(folderId));
+  }
+  const resolved = [];
+  for (const item of items) {
+    const entry = await resolveEntry(item);
+    if (entry) resolved.push(entry);
+  }
+  return resolved;
 }
 
 export async function fileModifiedTime(fileId) {
