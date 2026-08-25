@@ -646,9 +646,11 @@ async function pullFromDrive(folderId) {
     }
     const clues = [];
     if (result.unresolved) clues.push(`${result.unresolved} atalho(s) cujo destino não é acessível ao app`);
+    if (result.failed) clues.push(`${result.failed} pasta(s) com erro na consulta`);
     if (result.sample) clues.push(`item visto: "${result.sample.name}" [${result.sample.mimeType}]`);
-    return driveStatus(`Nenhum .md encontrado — a pasta contém apenas subpastas sem arquivos.` +
-      (clues.length ? ` Detalhes: ${clues.join('; ')}.` : '') +
+    clues.push(`[depuração: itens=${result.raw} erros=${result.failed} atalhos-falhos=${result.unresolved}]`);
+    return driveStatus(`Nenhum .md encontrado.` +
+      (clues.length ? ` ${clues.join('; ')}.` : '') +
       ' Se seus .md estão como atalhos, mova ou copie os arquivos reais para dentro da pasta.');
   }
 
