@@ -233,6 +233,21 @@ export async function listChildren(folderId) {
   return resolved;
 }
 
+export async function driveUser() {
+  return driveFetch('/drive/v3/about?fields=user(displayName,emailAddress)')
+    .then(r => r.json())
+    .then(data => data.user);
+}
+
+export async function findMarkdownEverywhere() {
+  const items = await listAccessibleItems();
+  const nameOf = new Map(items.map(item => [item.id, item.name]));
+  return items.filter(isMarkdown).map(item => ({
+    name: item.name,
+    where: (item.parents ?? []).map(parent => nameOf.get(parent) ?? parent).join(', ') || '(sem pasta visível)',
+  }));
+}
+
 export async function fileModifiedTime(fileId) {
   return driveFetch(`/drive/v3/files/${fileId}?fields=modifiedTime&supportsAllDrives=true`)
     .then(r => r.json())

@@ -2,7 +2,8 @@ import { allCards, saveCard, removeCard, clearCards, loadPinned, savePinned } fr
 import { parseCard, serializeCard } from './card-format.js';
 import { importFiles, exportCard, exportZip } from './io.js';
 import {
-  connect, pickFolder, listChildren, scanFolder, readFile, fileModifiedTime, writeFile, createFile, hashText,
+  connect, pickFolder, listChildren, scanFolder, readFile, fileModifiedTime, writeFile, createFile,
+  hashText, driveUser, findMarkdownEverywhere,
 } from './drive.js';
 import { DRIVE_CLIENT_ID, DRIVE_API_KEY } from './config.js';
 
@@ -540,6 +541,7 @@ function openDriveDialog() {
     <div class="dialog-actions">
       <button id="drive-pull">Baixar</button>
       <button id="drive-push">Enviar</button>
+      <button id="drive-scan" type="button">Procurar .md no Drive inteiro</button>
       <button id="drive-close" type="button">Fechar</button>
     </div>
     <p id="drive-status" class="muted hint"></p>`;
@@ -557,6 +559,7 @@ function openDriveDialog() {
   };
   dialog.querySelector('#drive-pull').onclick = () => runDrive(pullFromDrive);
   dialog.querySelector('#drive-push').onclick = () => runDrive(pushToDrive);
+  dialog.querySelector('#drive-scan').onclick = scanWholeDrive;
   dialog.showModal();
 }
 
@@ -617,6 +620,20 @@ async function chooseFolder() {
   } finally {
     if (wasOpen) dialog.showModal();
     syncFolderLabel();
+  }
+}
+
+async function scanWholeDrive() {
+  driveStatus('Procurando…');
+  try {
+    await connect(clientId());
+    const [user, found] = await Promise.all([driveUser(), findMarkdownEverywhere()]);
+    const who = user ? `${user.displayName} <${user.emailAddress}>` : 'conta desconhecida';
+    if (!found.length) return driveStatus(`Nenhum .md em todo o Drive visível para a conta ${who}.`);
+    const preview = found.slice(0, 8).map(f => `"${f.name}" (em ${f.where})`).join(', ');
+    driveStatus(`Conta: ${who} — ${found.length} .md encontrado(s): ${preview}${found.length > 8 ? ' …' : ''}`);
+  } catch (error) {
+    driveStatus(`Erro: ${error.message}`);
   }
 }
 
