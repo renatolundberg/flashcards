@@ -1,4 +1,4 @@
-const SCOPE = 'https://www.googleapis.com/auth/drive.file';
+const SCOPE = 'https://www.googleapis.com/auth/drive';
 const API = 'https://www.googleapis.com';
 
 export const session = { token: null, expiresAt: 0 };

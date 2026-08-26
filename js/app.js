@@ -630,8 +630,7 @@ async function scanWholeDrive() {
     const [user, found] = await Promise.all([driveUser(), findMarkdownEverywhere()]);
     const who = user ? `${user.displayName} <${user.emailAddress}>` : 'conta desconhecida';
     if (!found.length) {
-      return driveStatus(`Nenhum .md visível ao app para a conta ${who}. ` +
-        'O escopo drive.file limita esta busca às pastas autorizadas via "Escolher pasta".');
+      return driveStatus(`Nenhum arquivo .md encontrado no Drive da conta ${who}.`);
     }
     const preview = found.slice(0, 8).map(f => `"${f.name}" (em ${f.where})`).join(', ');
     driveStatus(`Conta: ${who} — ${found.length} .md encontrado(s): ${preview}${found.length > 8 ? ' …' : ''}`);
