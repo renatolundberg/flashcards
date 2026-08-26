@@ -564,10 +564,11 @@ async function mapPool(items, limit, worker) {
 }
 
 async function pullFromDrive(folderId) {
-  const tracked = driveState.files;
+  const folderChanged = driveState.folderId !== folderId;
+  driveState.folderId = folderId;
+  if (folderChanged) driveState.files = {};
   driveStatus('Procurando flashcards na pasta…');
   const { markdown: remotes, others, failed } = await scanFolder(folderId);
-  driveState.folderId = folderId;
 
   if (!remotes.length) {
     refresh();
@@ -581,7 +582,7 @@ async function pullFromDrive(folderId) {
   const fresh = [];
   const conflicts = [];
   for (const file of remotes) {
-    const entry = tracked[file.id];
+    const entry = driveState.files[file.id];
     const card = entry && byId.get(entry.cardId);
     if (!card) fresh.push(file);
     else if (file.modifiedTime === entry.modifiedTime) continue;
@@ -613,7 +614,7 @@ async function pullFromDrive(folderId) {
     const card = parseCard(file.name, text, byName.get(file.name));
     byName.set(file.name, card.id);
     pending.push(card);
-    tracked[file.id] = {
+    driveState.files[file.id] = {
       cardId: card.id,
       name: file.name,
       modifiedTime: file.modifiedTime,
