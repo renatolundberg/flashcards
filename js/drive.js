@@ -159,46 +159,8 @@ async function listChildrenOf(folderIds) {
   return items;
 }
 
-export async function fileModifiedTime(fileId) {
-  return driveFetch(`/drive/v3/files/${fileId}?fields=modifiedTime&supportsAllDrives=true`)
-    .then(r => r.json())
-    .then(data => data.modifiedTime);
-}
-
 export async function readFile(fileId) {
   return driveFetch(`/drive/v3/files/${fileId}?alt=media&supportsAllDrives=true`).then(r => r.text());
-}
-
-export async function writeFile(fileId, text) {
-  return driveFetch(
-    `/upload/drive/v3/files/${fileId}?uploadType=media&fields=id,modifiedTime&supportsAllDrives=true`,
-    { method: 'PATCH', headers: { 'Content-Type': 'text/markdown' }, body: text },
-  ).then(r => r.json());
-}
-
-export async function createFile(folderId, name, text) {
-  const boundary = `flashcards${Date.now().toString(36)}`;
-  const metadata = JSON.stringify({ name, parents: [folderId], mimeType: 'text/markdown' });
-  const body = [
-    `--${boundary}`,
-    'Content-Type: application/json; charset=UTF-8',
-    '',
-    metadata,
-    `--${boundary}`,
-    'Content-Type: text/markdown; charset=UTF-8',
-    '',
-    text,
-    `--${boundary}--`,
-    '',
-  ].join('\r\n');
-  return driveFetch(
-    '/upload/drive/v3/files?uploadType=multipart&fields=id,modifiedTime&supportsAllDrives=true',
-    {
-      method: 'POST',
-      headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
-      body,
-    },
-  ).then(r => r.json());
 }
 
 export function hashText(text) {

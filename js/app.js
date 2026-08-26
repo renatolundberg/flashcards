@@ -1,9 +1,6 @@
-import { allCards, saveCard, saveCards, removeCard, loadPinned, savePinned } from './store.js';
+import { allCards, saveCard, saveCards, removeCard, clearCards, loadPinned, savePinned } from './store.js';
 import { parseCard, serializeCard } from './card-format.js';
-import {
-  connect, hasValidToken, pickFolder, scanFolder, readFile, fileModifiedTime, writeFile, createFile,
-  hashText,
-} from './drive.js';
+import { connect, hasValidToken, pickFolder, scanFolder, readFile, hashText } from './drive.js';
 import { DRIVE_CLIENT_ID, DRIVE_API_KEY } from './config.js';
 
 const MODE_KEY = 'flashcards.mode';
@@ -504,21 +501,15 @@ function openDriveDialog() {
   dialog.innerHTML = `
     <h2>Google Drive</h2>
     <p class="muted hint">Escolha a pasta do Drive com seus flashcards (.md) — o download da pasta
-      e subpastas começa na hora. Enviar sobe seus cards para a pasta.</p>
+      e subpastas começa na hora, substituindo os cards atuais.</p>
     <div class="dialog-actions">
       <button id="drive-choose">Escolher pasta…</button>
       <span id="drive-folder-label" class="hint"></span>
-    </div>
-    <div class="dialog-actions">
-      <button id="drive-pull">Baixar</button>
-      <button id="drive-push">Enviar</button>
       <button id="drive-close" type="button">Fechar</button>
     </div>`;
   syncFolderLabel();
   dialog.querySelector('#drive-close').onclick = () => dialog.close();
   dialog.querySelector('#drive-choose').onclick = chooseFolder;
-  dialog.querySelector('#drive-pull').onclick = () => { dialog.close(); runDrive(pullFromDrive); };
-  dialog.querySelector('#drive-push').onclick = () => { dialog.close(); runDrive(pushToDrive); };
   dialog.showModal();
 }
 
@@ -535,13 +526,22 @@ async function chooseFolder() {
   try {
     const folder = await pickFolder(clientId(), apiKey());
     if (!folder) return driveStatus('');
-    driveState.folderId = folder.id;
-    driveState.folderName = folder.name;
+    resetLocal();
+    driveState = { folderId: folder.id, folderName: folder.name, files: {} };
     saveDriveState();
     await runDrive(pullFromDrive);
   } catch (error) {
     driveStatus(`Erro: ${error.message}`);
   }
+}
+
+function resetLocal() {
+  clearCards();
+  state.pinned.clear();
+  savePinned(state.pinned);
+  state.selectedTags.clear();
+  state.editingId = null;
+  refresh();
 }
 
 async function runDrive(action) {
@@ -629,58 +629,11 @@ async function pullFromDrive(folderId) {
   driveStatus(parts.join(' — ') + '.');
 }
 
-async function pushToDrive(folderId) {
-  driveState.folderId = folderId;
-  const tracked = driveState.files;
-  const byCard = new Map(Object.entries(tracked).map(([fileId, entry]) => [entry.cardId, fileId]));
-  const cards = allCards();
-  let created = 0, updated = 0, failed = 0, done = 0;
-
-  for (const card of cards) {
-    driveStatus(`Sincronizando ${++done}/${cards.length}…`);
-    const digest = hashText(serializeCard(card));
-    const fileId = byCard.get(card.id);
-    try {
-      if (fileId) {
-        const entry = tracked[fileId];
-        if (entry.mdHash === digest) continue;
-        const remoteTime = await fileModifiedTime(fileId);
-        if (remoteTime !== entry.modifiedTime &&
-            !confirm(`'${card.name}' mudou no Drive desde sua última sincronização. Sobrescrever?`)) {
-          entry.modifiedTime = remoteTime;
-          continue;
-        }
-        const result = await writeFile(fileId, serializeCard(card));
-        Object.assign(entry, { modifiedTime: result.modifiedTime, mdHash: digest });
-        updated++;
-      } else {
-        const result = await createFile(folderId, card.name, serializeCard(card));
-        tracked[result.id] = {
-          cardId: card.id,
-          name: card.name,
-          modifiedTime: result.modifiedTime,
-          mdHash: digest,
-        };
-        created++;
-      }
-    } catch (error) {
-      failed++;
-      console.warn(`${card.name}: ${error.message}`);
-    }
-  }
-  saveDriveState();
-  refresh();
-  driveStatus(
-    `Enviados: ${created === 1 ? '1 novo' : `${created} novos`}, ` +
-    `${updated === 1 ? '1 atualizado' : `${updated} atualizados`}` +
-    `${failed ? `, ${failed} com falha` : ''}.`);
-}
-
 refresh();
 
 if (driveState.folderId) {
   if (hasValidToken()) runDrive(pullFromDrive);
-  else driveStatus(`Pasta: ${driveState.folderName} — Drive… ▸ Baixar para sincronizar.`);
+  else driveStatus(`Pasta: ${driveState.folderName} — escolha a pasta em Drive… para atualizar.`);
 }
 
 $('#player-close').onclick = closePlayer;

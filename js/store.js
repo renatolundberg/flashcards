@@ -21,6 +21,10 @@ export function removeCard(id) {
   write(cards);
 }
 
+export function clearCards() {
+  write({});
+}
+
 function read() {
   return JSON.parse(localStorage.getItem(KEY) ?? '{}');
 }
