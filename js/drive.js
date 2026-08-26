@@ -1,7 +1,12 @@
 const SCOPE = 'https://www.googleapis.com/auth/drive';
 const API = 'https://www.googleapis.com';
+const TOKEN_KEY = 'flashcards.driveToken';
 
-export const session = { token: null, expiresAt: 0 };
+export const session = JSON.parse(localStorage.getItem(TOKEN_KEY) ?? '{"token":null,"expiresAt":0}');
+
+export function hasValidToken() {
+  return Boolean(session.token) && Date.now() < session.expiresAt - 60000;
+}
 
 function loadScript(src) {
   return new Promise((resolve, reject) => {
@@ -45,12 +50,13 @@ async function requestToken(clientId, prompt) {
 function store(response) {
   session.token = response.access_token;
   session.expiresAt = Date.now() + (response.expires_in ?? 3600) * 1000;
+  localStorage.setItem(TOKEN_KEY, JSON.stringify(session));
   return session.token;
 }
 
 export async function connect(clientId) {
   await loadGis();
-  if (session.token && Date.now() < session.expiresAt - 60000) return session.token;
+  if (hasValidToken()) return session.token;
   try {
     return await requestToken(clientId, '');
   } catch {
@@ -95,33 +101,55 @@ async function driveFetch(path, options = {}) {
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
 const SHORTCUT_MIME = 'application/vnd.google-apps.shortcut';
 const GOOGLE_MIME = 'application/vnd.google-apps.';
+const PARENTS_PER_QUERY = 10;
 
-export async function scanFolder(rootId) {
-  const result = await walkByParents(rootId);
-  if (result.raw > 0 || result.failed > 0) return result;
-  return walkByAccessibleSet(rootId);
-}
-
-async function resolveEntry(item, tally) {
+async function resolveEntry(item) {
   if (item.mimeType !== SHORTCUT_MIME || !item.shortcutDetails?.targetId) return item;
   try {
     return await driveFetch(
       `/drive/v3/files/${item.shortcutDetails.targetId}?fields=id,name,mimeType,modifiedTime&supportsAllDrives=true`,
     ).then(r => r.json());
   } catch {
-    tally.unresolved++;
     return null;
   }
 }
 
-async function listAccessibleItems() {
+const isMarkdown = item => item.name.toLowerCase().endsWith('.md') &&
+  !item.mimeType?.startsWith(GOOGLE_MIME);
+
+export async function scanFolder(rootId) {
+  const found = { markdown: [], others: [], failed: 0 };
+  const seen = new Set([rootId]);
+  let level = [rootId];
+  while (level.length) {
+    const next = [];
+    for (let i = 0; i < level.length; i += PARENTS_PER_QUERY) {
+      const batch = level.slice(i, i + PARENTS_PER_QUERY);
+      try {
+        for (const item of await listChildrenOf(batch)) {
+          const entry = await resolveEntry(item);
+          if (!entry) continue;
+          if (entry.mimeType === FOLDER_MIME) {
+            if (!seen.has(entry.id)) { seen.add(entry.id); next.push(entry.id); }
+          } else (isMarkdown(entry) ? found.markdown : found.others).push(entry);
+        }
+      } catch {
+        found.failed += batch.length;
+      }
+    }
+    level = next;
+  }
+  return found;
+}
+
+async function listChildrenOf(folderIds) {
   const items = [];
   const params = new URLSearchParams({
+    q: `(${folderIds.map(id => `'${id}' in parents`).join(' or ')}) and trashed = false`,
+    fields: 'nextPageToken, files(id, name, mimeType, modifiedTime, shortcutDetails)',
     pageSize: '1000',
-    fields: 'nextPageToken, files(id, name, mimeType, modifiedTime, trashed, parents, shortcutDetails)',
     supportsAllDrives: 'true',
     includeItemsFromAllDrives: 'true',
-    corpora: 'allDrives',
   });
   do {
     const data = await driveFetch(`/drive/v3/files?${params}`).then(r => r.json());
@@ -129,123 +157,6 @@ async function listAccessibleItems() {
     params.set('pageToken', data.nextPageToken ?? '');
   } while (params.get('pageToken'));
   return items;
-}
-
-const isMarkdown = item => item.name.toLowerCase().endsWith('.md') &&
-  !item.mimeType?.startsWith(GOOGLE_MIME);
-
-function classifyInto(item, markdown, others) {
-  if (item.mimeType === FOLDER_MIME) return 'folder';
-  (isMarkdown(item) ? markdown : others).push(item);
-  return 'file';
-}
-
-async function walkByParents(rootId) {
-  const tally = { markdown: [], others: [], failed: 0, raw: 0, unresolved: 0, folders: 0, sample: null };
-  const seen = new Set([rootId]);
-  const queue = [rootId];
-  while (queue.length) {
-    const folderId = queue.shift();
-    try {
-      const params = new URLSearchParams({
-        q: `'${folderId}' in parents and trashed = false`,
-        fields: 'nextPageToken, files(id, name, mimeType, modifiedTime, shortcutDetails)',
-        pageSize: '200',
-        supportsAllDrives: 'true',
-        includeItemsFromAllDrives: 'true',
-        corpora: 'allDrives',
-      });
-      do {
-        const data = await driveFetch(`/drive/v3/files?${params}`).then(r => r.json());
-        for (const item of data.files ?? []) {
-          tally.raw++;
-          if (!tally.sample) tally.sample = { name: item.name, mimeType: item.mimeType };
-          const entry = await resolveEntry(item, tally);
-          if (!entry) continue;
-          if (entry.mimeType === FOLDER_MIME) {
-            if (!seen.has(entry.id)) { seen.add(entry.id); tally.folders++; queue.push(entry.id); }
-          } else classifyInto(entry, tally.markdown, tally.others);
-        }
-        params.set('pageToken', data.nextPageToken ?? '');
-      } while (params.get('pageToken'));
-    } catch {
-      tally.failed++;
-    }
-  }
-  return tally;
-}
-
-async function walkByAccessibleSet(rootId) {
-  const childrenOf = new Map();
-  for (const item of await listAccessibleItems()) {
-    if (item.trashed) continue;
-    for (const parent of item.parents ?? []) {
-      if (!childrenOf.has(parent)) childrenOf.set(parent, []);
-      childrenOf.get(parent).push(item);
-    }
-  }
-
-  const tally = { markdown: [], others: [], failed: 0, raw: 0, unresolved: 0, folders: 0, sample: null };
-  const seen = new Set([rootId]);
-  const queue = [rootId];
-  while (queue.length) {
-    for (const item of childrenOf.get(queue.shift()) ?? []) {
-      tally.raw++;
-      if (!tally.sample) tally.sample = { name: item.name, mimeType: item.mimeType };
-      const entry = await resolveEntry(item, tally);
-      if (!entry) continue;
-      if (entry.mimeType === FOLDER_MIME) {
-        if (!seen.has(entry.id)) { seen.add(entry.id); tally.folders++; queue.push(entry.id); }
-      } else classifyInto(entry, tally.markdown, tally.others);
-    }
-  }
-  return tally;
-}
-
-export async function listChildren(folderId) {
-  const params = new URLSearchParams({
-    q: `'${folderId}' in parents and trashed = false`,
-    fields: 'nextPageToken, files(id, name, mimeType, shortcutDetails)',
-    pageSize: '1000',
-    supportsAllDrives: 'true',
-    includeItemsFromAllDrives: 'true',
-    corpora: 'allDrives',
-  });
-  let items = [];
-  try {
-    do {
-      const data = await driveFetch(`/drive/v3/files?${params}`).then(r => r.json());
-      items.push(...(data.files ?? []));
-      params.set('pageToken', data.nextPageToken ?? '');
-    } while (params.get('pageToken'));
-  } catch {
-    items.length = 0;
-  }
-  if (!items.length) {
-    items = (await listAccessibleItems())
-      .filter(item => !item.trashed && item.parents?.includes(folderId));
-  }
-  const resolved = [];
-  for (const item of items) {
-    const entry = await resolveEntry(item);
-    if (entry) resolved.push(entry);
-  }
-  return resolved;
-}
-
-export async function driveUser() {
-  return driveFetch('/drive/v3/about?fields=user(displayName,emailAddress)')
-    .then(r => r.json())
-    .then(data => data.user);
-}
-
-export async function findMarkdownEverywhere() {
-  const items = await listAccessibleItems();
-  const nameOf = new Map(items.map(item => [item.id, item.name]));
-  return items.filter(isMarkdown).map(item => ({
-    name: item.name,
-    where: (item.parents ?? []).map(parent => nameOf.get(parent) ?? parent).join(', ') || '(sem pasta visível)',
-  }));
 }
 
 export async function fileModifiedTime(fileId) {

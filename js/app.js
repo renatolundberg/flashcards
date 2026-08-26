@@ -1,9 +1,8 @@
-import { allCards, saveCard, removeCard, clearCards, loadPinned, savePinned } from './store.js';
+import { allCards, saveCard, saveCards, removeCard, loadPinned, savePinned } from './store.js';
 import { parseCard, serializeCard } from './card-format.js';
-import { importFiles, exportCard, exportZip } from './io.js';
 import {
-  connect, pickFolder, listChildren, scanFolder, readFile, fileModifiedTime, writeFile, createFile,
-  hashText, driveUser, findMarkdownEverywhere,
+  connect, hasValidToken, pickFolder, scanFolder, readFile, fileModifiedTime, writeFile, createFile,
+  hashText,
 } from './drive.js';
 import { DRIVE_CLIENT_ID, DRIVE_API_KEY } from './config.js';
 
@@ -40,29 +39,10 @@ function setMode(mode) {
   refresh();
 }
 
-$('#import').onclick = () => $('#file-input').click();
-
 $('#drive').onclick = openDriveDialog;
-
-$('#file-input').onchange = async ({ target }) => {
-  for (const card of await importFiles(target.files)) saveCard(card);
-  target.value = '';
-  refresh();
-};
 
 $('#new-card').onclick = () => {
   state.editingId = 'new';
-  refresh();
-};
-
-$('#export-zip').onclick = () => exportZip(visibleCards());
-
-$('#clear').onclick = () => {
-  const count = allCards().length;
-  if (!count || !confirm(`Apagar todos os ${count} cards?`)) return;
-  clearCards();
-  state.pinned.clear();
-  savePinned(state.pinned);
   refresh();
 };
 
@@ -166,7 +146,7 @@ function renderCards() {
   if (!cards.length) {
     pane.append(hint(allCards().length
       ? 'Nenhum card com as hashtags selecionadas.'
-      : 'Nenhum card ainda — use Importar para carregar arquivos .md ou um .zip.'));
+      : 'Nenhum card ainda — use Drive… para escolher a pasta do Google Drive com seus flashcards (.md).'));
     return;
   }
   for (const [i, card] of cards.entries()) {
@@ -274,7 +254,7 @@ function renderStudy(pane) {
   if (!pool.length) {
     pane.append(hint(allCards().length
       ? 'Nenhum card com as hashtags selecionadas.'
-      : 'Nenhum card ainda — use Importar no modo Editar para carregar flashcards.'));
+      : 'Nenhum card ainda — escolha a pasta do Google Drive no modo Editar.'));
     return;
   }
   if (!pool.some(card => card.id === state.studyCardId)) {
@@ -328,7 +308,6 @@ function actionButtons(card) {
   row.className = 'actions';
   row.append(
     button('Editar', () => { state.editingId = card.id; refresh(); }),
-    button('Exportar .md', () => exportCard(card)),
     button('Apagar', () => {
       if (!confirm(`Apagar ${card.name}?`)) return;
       removeCard(card.id);
@@ -524,74 +503,23 @@ function openDriveDialog() {
   }
   dialog.innerHTML = `
     <h2>Google Drive</h2>
-    <p class="muted hint">Autorize a pasta-raiz uma vez em "Escolher pasta", navegue até onde quiser
-      e use "Usar esta pasta". Baixar importa os flashcards (.md) da pasta e subpastas; Enviar sobe seus cards.</p>
+    <p class="muted hint">Escolha a pasta do Drive com seus flashcards (.md) — o download da pasta
+      e subpastas começa na hora. Enviar sobe seus cards para a pasta.</p>
     <div class="dialog-actions">
       <button id="drive-choose">Escolher pasta…</button>
       <span id="drive-folder-label" class="hint"></span>
     </div>
-    <div id="drive-browse">
-      <div class="dialog-actions">
-        <button id="drive-up" title="Subir">↑</button>
-        <span id="drive-path" class="hint"></span>
-        <button id="drive-here">Usar esta pasta</button>
-      </div>
-      <div id="drive-subfolders"></div>
-    </div>
     <div class="dialog-actions">
       <button id="drive-pull">Baixar</button>
       <button id="drive-push">Enviar</button>
-      <button id="drive-scan" type="button">Procurar .md no Drive inteiro</button>
       <button id="drive-close" type="button">Fechar</button>
-    </div>
-    <p id="drive-status" class="muted hint"></p>`;
+    </div>`;
   syncFolderLabel();
-  syncBrowse();
   dialog.querySelector('#drive-close').onclick = () => dialog.close();
   dialog.querySelector('#drive-choose').onclick = chooseFolder;
-  dialog.querySelector('#drive-up').onclick = () => { browseStack.pop(); syncBrowse(); };
-  dialog.querySelector('#drive-here').onclick = () => {
-    driveState.folderId = browseStack[browseStack.length - 1].id;
-    driveState.folderName = browseStack.map(level => level.name).join(' / ');
-    saveDriveState();
-    syncFolderLabel();
-    driveStatus('');
-  };
-  dialog.querySelector('#drive-pull').onclick = () => runDrive(pullFromDrive);
-  dialog.querySelector('#drive-push').onclick = () => runDrive(pushToDrive);
-  dialog.querySelector('#drive-scan').onclick = scanWholeDrive;
+  dialog.querySelector('#drive-pull').onclick = () => { dialog.close(); runDrive(pullFromDrive); };
+  dialog.querySelector('#drive-push').onclick = () => { dialog.close(); runDrive(pushToDrive); };
   dialog.showModal();
-}
-
-let browseStack = [];
-
-function syncBrowse() {
-  const path = $('#drive-path');
-  if (!path) return;
-  const pane = $('#drive-subfolders');
-  if (!browseStack.length) {
-    $('#drive-up').disabled = true;
-    path.textContent = '(autorize a pasta-raiz acima)';
-    pane.textContent = '';
-    return;
-  }
-  $('#drive-up').disabled = browseStack.length <= 1;
-  path.textContent = browseStack.map(level => level.name).join(' / ');
-  pane.textContent = 'Carregando…';
-  listChildren(browseStack[browseStack.length - 1].id).then(children => {
-    pane.textContent = '';
-    for (const child of children) {
-      if (child.mimeType !== 'application/vnd.google-apps.folder') continue;
-      const btn = document.createElement('button');
-      btn.textContent = '📁 ' + child.name;
-      btn.onclick = () => {
-        browseStack.push({ id: child.id, name: child.name });
-        syncBrowse();
-      };
-      pane.append(btn);
-    }
-    if (!pane.children.length) pane.append(hint('(nenhuma subpasta)'));
-  });
 }
 
 function syncFolderLabel() {
@@ -602,38 +530,15 @@ function syncFolderLabel() {
 async function chooseFolder() {
   if (!clientId()) return driveStatus('Client ID do Google não configurado — defina em js/config.js.');
   if (!apiKey()) return driveStatus('Chave de API não configurada — defina DRIVE_API_KEY em js/config.js.');
+  $('#drive-dialog').close();
   driveStatus('Abrindo o Drive…');
-  const dialog = $('#drive-dialog');
-  const wasOpen = dialog.open;
-  if (wasOpen) dialog.close();
   try {
     const folder = await pickFolder(clientId(), apiKey());
-    if (!folder) return;
-    browseStack = [{ id: folder.id, name: folder.name }];
+    if (!folder) return driveStatus('');
     driveState.folderId = folder.id;
     driveState.folderName = folder.name;
     saveDriveState();
-    syncBrowse();
-    driveStatus('');
-  } catch (error) {
-    driveStatus(`Erro: ${error.message}`);
-  } finally {
-    if (wasOpen) dialog.showModal();
-    syncFolderLabel();
-  }
-}
-
-async function scanWholeDrive() {
-  driveStatus('Procurando…');
-  try {
-    await connect(clientId());
-    const [user, found] = await Promise.all([driveUser(), findMarkdownEverywhere()]);
-    const who = user ? `${user.displayName} <${user.emailAddress}>` : 'conta desconhecida';
-    if (!found.length) {
-      return driveStatus(`Nenhum arquivo .md encontrado no Drive da conta ${who}.`);
-    }
-    const preview = found.slice(0, 8).map(f => `"${f.name}" (em ${f.where})`).join(', ');
-    driveStatus(`Conta: ${who} — ${found.length} .md encontrado(s): ${preview}${found.length > 8 ? ' …' : ''}`);
+    await runDrive(pullFromDrive);
   } catch (error) {
     driveStatus(`Erro: ${error.message}`);
   }
@@ -651,33 +556,33 @@ async function runDrive(action) {
   }
 }
 
+async function mapPool(items, limit, worker) {
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) await worker(items[next++]);
+  }));
+}
+
 async function pullFromDrive(folderId) {
   const tracked = driveState.files;
-  const result = await scanFolder(folderId);
-  const { markdown: remotes, others } = result;
+  driveStatus('Procurando flashcards na pasta…');
+  const { markdown: remotes, others, failed } = await scanFolder(folderId);
   driveState.folderId = folderId;
 
   if (!remotes.length) {
     refresh();
-    if (others.length) {
-      const inaccessible = result.failed ? ` (${result.failed} pasta(s) inacessível(is))` : '';
-      return driveStatus(`Nenhum .md na pasta${inaccessible} — há ${others.length} arquivo(s) de outro tipo (PDF etc.). O app importa somente arquivos .md.`);
-    }
-    const clues = [];
-    if (result.unresolved) clues.push(`${result.unresolved} atalho(s) cujo destino não é acessível ao app`);
-    if (result.failed) clues.push(`${result.failed} pasta(s) com erro na consulta`);
-    if (result.sample) clues.push(`item visto: "${result.sample.name}" [${result.sample.mimeType}]`);
-    clues.push(`[depuração: itens=${result.raw} pastas=${result.folders} erros=${result.failed} atalhos-falhos=${result.unresolved}]`);
-    return driveStatus(`Nenhum .md encontrado.` +
-      (clues.length ? ` ${clues.join('; ')}.` : '') +
-      ' Se seus .md estão como atalhos, mova ou copie os arquivos reais para dentro da pasta.');
+    const inaccessible = failed ? ` (${failed} pasta(s) inacessível(is))` : '';
+    return driveStatus(others.length
+      ? `Nenhum .md na pasta${inaccessible} — há ${others.length} arquivo(s) de outro tipo (PDF etc.). O app importa somente arquivos .md.`
+      : `Nenhum .md encontrado na pasta${inaccessible}.`);
   }
 
+  const byId = new Map(allCards().map(c => [c.id, c]));
   const fresh = [];
   const conflicts = [];
   for (const file of remotes) {
     const entry = tracked[file.id];
-    const card = entry && allCards().find(c => c.id === entry.cardId);
+    const card = entry && byId.get(entry.cardId);
     if (!card) fresh.push(file);
     else if (file.modifiedTime === entry.modifiedTime) continue;
     else if (hashText(serializeCard(card)) === entry.mdHash) fresh.push(file);
@@ -694,19 +599,31 @@ async function pullFromDrive(folderId) {
     kept = conflicts.length;
   } else fresh.push(...conflicts);
 
-  for (const file of fresh) {
-    const existing = allCards().find(c => c.name === file.name);
-    const card = parseCard(file.name, await readFile(file.id), existing?.id);
-    saveCard(card);
+  const byName = new Map(allCards().map(c => [c.name, c.id]));
+  const pending = [];
+  let done = 0;
+  let lastFlush = Date.now();
+  const flush = () => {
+    saveCards(pending.splice(0));
+    refresh();
+    lastFlush = Date.now();
+  };
+  await mapPool(fresh, 8, async file => {
+    const text = await readFile(file.id);
+    const card = parseCard(file.name, text, byName.get(file.name));
+    byName.set(file.name, card.id);
+    pending.push(card);
     tracked[file.id] = {
       cardId: card.id,
       name: file.name,
       modifiedTime: file.modifiedTime,
       mdHash: hashText(serializeCard(card)),
     };
-  }
+    driveStatus(`Baixando ${++done}/${fresh.length}…`);
+    if (Date.now() - lastFlush > 500) flush();
+  });
+  flush();
   saveDriveState();
-  refresh();
   const parts = [fresh.length === 1 ? 'Baixado 1 flashcard' : `Baixados ${fresh.length} flashcards`];
   if (kept) parts.push(kept === 1 ? '1 edição local mantida' : `${kept} edições locais mantidas`);
   driveStatus(parts.join(' — ') + '.');
@@ -760,6 +677,11 @@ async function pushToDrive(folderId) {
 }
 
 refresh();
+
+if (driveState.folderId) {
+  if (hasValidToken()) runDrive(pullFromDrive);
+  else driveStatus(`Pasta: ${driveState.folderName} — Drive… ▸ Baixar para sincronizar.`);
+}
 
 $('#player-close').onclick = closePlayer;
 document.addEventListener('keydown', event => {

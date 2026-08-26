@@ -6,8 +6,12 @@ export function allCards() {
 }
 
 export function saveCard(card) {
+  saveCards([card]);
+}
+
+export function saveCards(list) {
   const cards = read();
-  cards[card.id] = card;
+  for (const card of list) cards[card.id] = card;
   write(cards);
 }
 
@@ -15,10 +19,6 @@ export function removeCard(id) {
   const cards = read();
   delete cards[id];
   write(cards);
-}
-
-export function clearCards() {
-  write({});
 }
 
 function read() {
