@@ -143,7 +143,7 @@ function renderCards() {
   if (!cards.length) {
     pane.append(hint(allCards().length
       ? 'Nenhum card com as hashtags selecionadas.'
-      : 'Nenhum card ainda — use Drive… para escolher a pasta do Google Drive com seus flashcards (.md).'));
+      : 'Nenhum card ainda — selecione a pasta do Google Drive com seus flashcards (.md).'));
     return;
   }
   for (const [i, card] of cards.entries()) {
@@ -634,7 +634,9 @@ refresh();
 
 if (driveState.folderId) {
   if (hasValidToken()) runDrive(pullFromDrive);
-  else driveStatus(`Pasta: ${driveState.folderName} — escolha a pasta em Drive… para atualizar.`);
+  else driveStatus(`Pasta: ${driveState.folderName} — escolha a pasta em Selecionar pasta para atualizar.`);
+} else {
+  openDriveDialog();
 }
 
 $('#player-close').onclick = closePlayer;
